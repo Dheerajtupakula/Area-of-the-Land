@@ -1,113 +1,237 @@
-import Image from "next/image";
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import Webcam from "react-webcam";
+
+const DynamicMap = dynamic(() => import("./components/MapComponent"), {
+  ssr: false,
+});
 
 export default function Home() {
+  const [data, setData] = useState([]);
+  const [images, setImages] = useState({
+    east: null,
+    west: null,
+    north: null,
+    south: null,
+  });
+  const [isMapView, setIsMapView] = useState(false);
+  const [devices, setDevices] = useState([]);
+  const [deviceId, setDeviceId] = useState();
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [currentDirection, setCurrentDirection] = useState(null);
+  const webcamRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCamera, setSelectedCamera] = useState(null);
+
+  const directions = [
+    "east",
+    "west",
+    "north",
+    "south",
+    "south-east",
+    "south-west",
+    "north-east",
+    "north-west",
+  ];
+  useEffect(() => {
+    setData(data);
+  }, [data]);
+
+  const handleDevices = useCallback(
+    (mediaDevices) => {
+      const videoDevices = mediaDevices.filter(
+        ({ kind }) => kind === "videoinput"
+      );
+      setDevices(videoDevices);
+
+      const backCamera = videoDevices.find((device) =>
+        device.label.toLowerCase().includes("back")
+      );
+      const frontCamera = videoDevices.find((device) =>
+        device.label.toLowerCase().includes("front")
+      );
+
+      const preferredCamera = backCamera || frontCamera || videoDevices[0];
+      setDeviceId(preferredCamera?.deviceId || null);
+
+      setSelectedCamera(preferredCamera?.deviceId || null);
+
+      setIsMobile(
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        )
+      );
+    },
+    [setDevices]
+  );
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(handleDevices);
+  }, [handleDevices]);
+
+  const switchCamera = () => {
+    const currentIndex = devices.findIndex(
+      (device) => device.deviceId === selectedCamera
+    );
+    const nextIndex = (currentIndex + 1) % devices.length;
+    setSelectedCamera(devices[nextIndex].deviceId);
+  };
+
+  const capture = useCallback(() => {
+    if (isLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    if (!webcamRef.current) {
+      console.error("Webcam reference not available");
+      setIsLoading(false);
+      return;
+    }
+
+    const imageSrc = webcamRef.current.getScreenshot();
+
+    if (!imageSrc) {
+      console.error("Failed to capture image");
+      setIsLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        setData((prevData) => [
+          ...prevData,
+          { name: currentDirection, lat: latitude, lon: longitude },
+        ]);
+
+        setImages((prevImages) => ({
+          ...prevImages,
+          [currentDirection]: {
+            image: imageSrc,
+            lat: latitude,
+            lon: longitude,
+          },
+        }));
+
+        setIsCameraOpen(false);
+        setCurrentDirection(null);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("Error getting location", error);
+
+        setImages((prevImages) => ({
+          ...prevImages,
+          [currentDirection]: {
+            image: imageSrc,
+            lat: null,
+            lon: null,
+          },
+        }));
+
+        setIsCameraOpen(false);
+        setCurrentDirection(null);
+        setIsLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+      }
+    );
+  }, [currentDirection, webcamRef, isLoading]);
+
+  const handleDirectionClick = (direction) => {
+    setCurrentDirection(direction);
+    setIsCameraOpen(true);
+  };
+
+  const handleMap = () => {
+    setIsMapView(!isMapView);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="relative flex flex-col justify-center items-center gap-3 p-2">
+      <div>
+        {isCameraOpen && (
+          <div
+            className={`absolute inset-0 ${
+              isMobile ? "h-screen" : "h-full"
+            } flex justify-center items-center bg-black bg-opacity-50 z-50`}
           >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+            <div className="flex  flex-col justify-center items-center bg-white p-4 rounded shadow-lg">
+              {devices.length > 0 && (
+                <Webcam
+                  audio={false}
+                  height={isMobile ? 480 : 360}
+                  width={isMobile ? 320 : 480}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={{ deviceId: selectedCamera || undefined }}
+                />
+              )}
+              <button
+                className="mt-4 p-2 bg-blue-500 text-white rounded"
+                onClick={capture}
+                disabled={isLoading}
+              >
+                {isLoading ? "Capturing..." : `Capture ${currentDirection}`}
+              </button>
+
+              <button
+                className="mt-2 p-2 bg-gray-300 text-gray-800 rounded"
+                onClick={switchCamera}
+              >
+                Switch Camera
+              </button>
+
+              {isLoading && (
+                <div className="absolute text-white inset-0 z-50 bg-slate-700/75 flex justify-center items-center">
+                  {" "}
+                  Capturing...
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          {directions.map((direction) => (
+            <div
+              key={direction}
+              className="border p-4 flex justify-center items-center"
+            >
+              {images[direction] ? (
+                <div className="size-20">
+                  <img
+                    className="w-full h-full object-cover"
+                    src={images[direction].image}
+                    alt={direction}
+                  />
+                </div>
+              ) : (
+                <button
+                  className="p-4 bg-blue-500 text-white rounded"
+                  onClick={() => handleDirectionClick(direction)}
+                >
+                  {direction.charAt(0).toUpperCase() + direction.slice(1)}
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
+      {data.length > 2 && (
+        <button
+          className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium tracking-wide text-white transition-colors duration-200 rounded-md bg-blue-700 hover:bg-blue-800 focus:ring-2 focus:ring-offset-2 focus:ring-blue-700 focus:shadow-outline focus:outline-none"
+          onClick={handleMap}
         >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+          View Map
+        </button>
+      )}
+      {data.length > 2 && isMapView && <DynamicMap data={data} />}
+      {/* <DynamicMap data={data} /> */}
     </main>
   );
 }
