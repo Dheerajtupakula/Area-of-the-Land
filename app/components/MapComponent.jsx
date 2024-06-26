@@ -27,6 +27,20 @@ const LeafletMap = ({ data }) => {
   //   { name: "point3", lat: 17.434383, lon: 78.379777 },
   //   { name: "point4", lat: 17.433574, lon:  78.379014 },
   // ];
+
+  const order = {
+    north: 1,
+    "north-east": 2,
+    east: 3,
+    "south-east": 4,
+    south: 5,
+    "south-west": 6,
+    west: 7,
+    "north-west": 8,
+  };
+
+  data.sort((a, b) => order[a.name] - order[b.name]);
+
   const [location, setLocation] = useState({
     lat: data[0].lat,
     lon: data[0].lon,
@@ -56,7 +70,7 @@ const LeafletMap = ({ data }) => {
     }
     setLocation({ lat, lon });
     setMapCenter([lat, lon]);
-    setMapZoom(14);
+    setMapZoom(16);
     if (mapRef.current) {
       mapRef.current.flyTo([lat, lon], 18, {
         duration: 1.2,
@@ -72,12 +86,6 @@ const LeafletMap = ({ data }) => {
 
   const polygonCoordinates = data.map((item) => [item.lat, item.lon]);
   polygonCoordinates.push([data[0].lat, data[0].lon]);
-  // const polygonCoordinates = [
-  //   [51.505, -0.09],
-  //   [51.51, -0.1],
-  //   [51.51, -0.12],
-  //   [51.505, -0.09],
-  // ];
 
   const calculateFeetArea = (squares) => {
     return squares * 10.7639;
