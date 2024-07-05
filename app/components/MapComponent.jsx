@@ -1,33 +1,12 @@
 import { MapContainer, TileLayer, Marker, Popup, Polygon } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-draw/dist/leaflet.draw.css";
 import L from "leaflet";
+import "leaflet-draw";
 import { useState, useEffect, useRef } from "react";
 import * as turf from "@turf/turf";
 
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-});
-
-const redDotIcon = L.divIcon({
-  className: "size-10 bg-red-600",
-  iconSize: [10, 10],
-  iconAnchor: [5, 5],
-});
-
-const LeafletMap = ({ data }) => {
-  // const data = [
-  //   { name: "point1", lat: 17.433975, lon: 78.378552 },
-  //   { name: "point2", lat: 17.434772, lon: 78.379304 },
-  //   { name: "point3", lat: 17.434383, lon: 78.379777 },
-  //   { name: "point4", lat: 17.433574, lon:  78.379014 },
-  // ];
-
+const LeafletMap = ({ data, setData }) => {
   const order = {
     north: 1,
     "north-east": 2,
@@ -47,25 +26,58 @@ const LeafletMap = ({ data }) => {
   });
   const [mapCenter, setMapCenter] = useState([location.lat, location.lon]);
   const [mapZoom, setMapZoom] = useState(13);
+  const [polygonCoordinates, setPolygonCoordinates] = useState(
+    data.map((item) => [item.lat, item.lon])
+  );
   const mapRef = useRef(null);
-  console.log(data);
+
+  const redDotIcon = L.divIcon({
+    className:
+      "size-40 rotate-45  rounded-br-lg rounded-tr-lg rounded-tl-lg bg-red-600 ",
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl:
-          "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-        iconUrl:
-          "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-        shadowUrl:
-          "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    if (mapRef.current) {
+      const map = mapRef.current;
+      const drawnItems = new L.FeatureGroup();
+      map.addLayer(drawnItems);
+
+      const drawControl = new L.Control.Draw({
+        edit: {
+          featureGroup: drawnItems,
+        },
+        draw: {
+          polygon: true,
+          marker: true,
+          rectangle: false,
+          circle: false,
+          circlemarker: false,
+          polyline: false,
+        },
+      });
+      map.addControl(drawControl);
+
+      map.on(L.Draw.Event.CREATED, function (event) {
+        const layer = event.layer;
+        drawnItems.addLayer(layer);
+        handleCreated(event);
+      });
+
+      map.on(L.Draw.Event.EDITED, function (event) {
+        handleEdited(event);
+      });
+
+      map.on(L.Draw.Event.DELETED, function (event) {
+        handleDeleted(event);
       });
     }
-  }, []);
+  }, [mapRef.current]);
 
   const handleMarkerClick = (lat, lon) => {
     if (location.lat === lat && location.lon === lon) {
+      setMapZoom(16);
       return;
     }
     setLocation({ lat, lon });
@@ -73,25 +85,91 @@ const LeafletMap = ({ data }) => {
     setMapZoom(16);
     if (mapRef.current) {
       mapRef.current.flyTo([lat, lon], 18, {
-        duration: 1.2,
+        duration: 1,
       });
     }
   };
 
   const calculateArea = (coordinates) => {
-    const polygon = turf.polygon([coordinates]);
-    const area = turf.area(polygon);
-    return area;
+    // Ensure the polygon is closed
+    if (
+      coordinates.length > 0 &&
+      coordinates[0] !== coordinates[coordinates.length - 1]
+    ) {
+      coordinates.push(coordinates[0]);
+    }
+    if (coordinates.length > 2) {
+      const polygon = turf.polygon([coordinates]);
+      const area = turf.area(polygon);
+      return area;
+    }
+    return 0;
   };
-
-  const polygonCoordinates = data.map((item) => [item.lat, item.lon]);
-  polygonCoordinates.push([data[0].lat, data[0].lon]);
 
   const calculateFeetArea = (squares) => {
     return squares * 10.7639;
   };
+
   const polygonArea = calculateArea(polygonCoordinates);
   const polygonFeetArea = calculateFeetArea(polygonArea);
+
+  const handleCreated = (e) => {
+    const layer = e.layer;
+    if (layer instanceof L.Marker) {
+      const { lat, lng } = layer.getLatLng();
+      const newMarker = { name: `point${data.length + 1}`, lat, lon: lng };
+      const newData = [...data, newMarker];
+      setData(newData);
+      setPolygonCoordinates(newData.map((item) => [item.lat, item.lon]));
+    } else if (layer instanceof L.Polygon) {
+      const latlngs = layer
+        .getLatLngs()[0]
+        .map((latlng) => [latlng.lat, latlng.lng]);
+      setPolygonCoordinates(latlngs);
+    }
+  };
+
+  const handleEdited = (e) => {
+    const layers = e.layers;
+    const newData = [...data];
+    layers.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        const { lat, lng } = layer.getLatLng();
+        const index = newData.findIndex(
+          (point) =>
+            point.lat === layer._latlng.lat && point.lon === layer._latlng.lng
+        );
+        newData[index] = { ...newData[index], lat, lon: lng };
+      } else if (layer instanceof L.Polygon) {
+        const latlngs = layer
+          .getLatLngs()[0]
+          .map((latlng) => [latlng.lat, latlng.lng]);
+        setPolygonCoordinates(latlngs);
+      }
+    });
+    setData(newData);
+    setPolygonCoordinates(newData.map((item) => [item.lat, item.lon]));
+  };
+
+  const handleDeleted = (e) => {
+    const layers = e.layers;
+    const newData = [...data];
+    layers.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        const { lat, lng } = layer.getLatLng();
+        const index = newData.findIndex(
+          (point) => point.lat === lat && point.lon === lng
+        );
+        newData.splice(index, 1);
+      } else if (layer instanceof L.Polygon) {
+        setPolygonCoordinates([]);
+      }
+    });
+    setData(newData);
+    setPolygonCoordinates(newData.map((item) => [item.lat, item.lon]));
+  };
+
+  console.log(data);
 
   return (
     <div className="flex flex-col justify-start px-2 gap-3 border">
@@ -104,6 +182,7 @@ const LeafletMap = ({ data }) => {
         center={mapCenter}
         zoom={mapZoom}
         style={{ height: "75vh", width: "100%" }}
+        whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -123,10 +202,10 @@ const LeafletMap = ({ data }) => {
         ))}
         <Polygon positions={polygonCoordinates} color="blue" />
       </MapContainer>
-      <div className=" border grid grid-cols-2 w-full  justify-start  items-start gap-2">
+      <div className="border grid grid-cols-2 w-full justify-start items-start gap-2">
         {data.map((item) => (
           <div
-            key={item.id}
+            key={item.name}
             className="border p-2 w-full bg-slate-300 cursor-pointer"
             onClick={() => handleMarkerClick(item.lat, item.lon)}
           >

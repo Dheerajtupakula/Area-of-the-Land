@@ -35,6 +35,7 @@ export default function Home() {
     "north-east",
     "north-west",
   ];
+
   useEffect(() => {
     setData(data);
   }, [data]);
@@ -152,8 +153,13 @@ export default function Home() {
     setIsMapView(!isMapView);
   };
 
+  const closeCamera = () => {
+    setIsCameraOpen(false);
+    setCurrentDirection(null);
+  };
+
   return (
-    <main className="relative flex flex-col justify-center items-center gap-3 ">
+    <main className="relative flex flex-col justify-center items-center gap-3">
       {!isMapView && (
         <div className="p-2">
           {isCameraOpen && (
@@ -162,7 +168,7 @@ export default function Home() {
                 isMobile ? "h-screen" : "h-full"
               } flex justify-center items-center bg-black bg-opacity-50 z-50`}
             >
-              <div className="flex  flex-col justify-center items-center bg-white p-4 rounded shadow-lg">
+              <div className="flex flex-col justify-center items-center bg-white p-4 rounded shadow-lg relative">
                 {devices.length > 0 && (
                   <Webcam
                     audio={false}
@@ -171,6 +177,10 @@ export default function Home() {
                     ref={webcamRef}
                     screenshotFormat="image/jpeg"
                     videoConstraints={{ deviceId: selectedCamera || undefined }}
+                    onUserMediaError={(error) => {
+                      console.error("Webcam error: ", error);
+                      alert("Error accessing webcam: " + error.message);
+                    }}
                   />
                 )}
                 <button
@@ -188,9 +198,28 @@ export default function Home() {
                   Switch Camera
                 </button>
 
+                <button
+                  className="mt-2 p-2 bg-white rounded-full absolute -top-1 right-0 text-red-500"
+                  onClick={closeCamera}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="size-6"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M6 18 18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+
                 {isLoading && (
                   <div className="absolute text-white inset-0 z-50 bg-slate-700/75 flex justify-center items-center">
-                    {" "}
                     Capturing...
                   </div>
                 )}
@@ -232,8 +261,9 @@ export default function Home() {
           View Map
         </button>
       )}
-      {data.length > 2 && isMapView && <DynamicMap data={data} />}
-      {/* <DynamicMap data={data} /> */}
+      {data.length > 2 && isMapView && (
+        <DynamicMap data={data} setData={setData} />
+      )}
     </main>
   );
 }
